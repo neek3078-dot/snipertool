@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pro Solana Sniper | V8 Live Execution</title>
+    <title>Pro Solana Sniper | V8.1 Stable</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script src="https://unpkg.com/@solana/web3.js@1.95.4/lib/index.iife.min.js"></script>
 
     <style>
         body { background-color: #09090b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; min-height: 100vh; }
@@ -36,8 +36,8 @@
     
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>
-            <h2 class="text-solana fw-bold mb-0"><i class="fa-solid fa-bolt"></i> Sniper V8</h2>
-            <small class="text-muted"><i class="fa-solid fa-satellite-dish"></i> Live Jupiter Execution Active</small>
+            <h2 class="text-solana fw-bold mb-0"><i class="fa-solid fa-bolt"></i> Sniper V8.1</h2>
+            <small class="text-muted"><i class="fa-solid fa-check-circle text-success"></i> Stable Web3 Core Active</small>
         </div>
         <button class="btn btn-phantom fw-bold rounded-3 flex-grow-1 flex-md-grow-0" id="connectWalletBtn">
             <i class="fa-solid fa-wallet"></i> Connect Phantom
@@ -99,7 +99,6 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // --- DOM Elements ---
     const connectWalletBtn = document.getElementById('connectWalletBtn');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -108,24 +107,22 @@
     const buySound = document.getElementById('buySound');
     const sellSound = document.getElementById('sellSound');
 
-    // --- State Variables ---
     let walletAddress = null;
     let scanInterval, priceMonitorInterval;
     let isScanning = false;
     let isMonitoring = false;
-    let currentSolPrice = 150; // Fallback price
+    let currentSolPrice = 150; 
     
     let knownTokens = new Set(); 
     const MAX_KNOWN_TOKENS = 500; 
-    
     let activePositions = {}; 
     let tradeHistory = []; 
+    
     const TRADE_SIZE_USD = 2.00; 
     const SOL_MINT = "So11111111111111111111111111111111111111112";
     
-    // --- Log Management ---
     const MAX_LOGS = 50; 
-    let logHistory = [`<i class="fa-solid fa-terminal"></i> V8 System initialized. Connect wallet to begin.`];
+    let logHistory = [`<i class="fa-solid fa-terminal"></i> System initialized. Host on GitHub Pages to avoid CORS errors.`];
 
     function initLog() { renderLogs(); }
 
@@ -149,7 +146,6 @@
         logBox.scrollTop = logBox.scrollHeight;
     }
 
-    // --- Helpers ---
     function base64ToUint8Array(base64) {
         const binaryString = atob(base64);
         const bytes = new Uint8Array(binaryString.length);
@@ -159,18 +155,20 @@
         return bytes;
     }
 
+    // BUG FIX 2: Switched to Jupiter API for SOL price (No rate limits/CORS errors)
     async function fetchLiveSolPrice() {
         try {
-            const res = await fetch(`https://api.geckoterminal.com/api/v2/simple/networks/solana/token_price/${SOL_MINT}`);
+            const res = await fetch(`https://price.jup.ag/v6/price?ids=SOL`);
             const data = await res.json();
-            currentSolPrice = parseFloat(data.data.attributes.token_prices[SOL_MINT]);
-            log(`Live SOL Price updated: $${currentSolPrice.toFixed(2)}`, "scan");
+            if (data.data.SOL && data.data.SOL.price) {
+                currentSolPrice = parseFloat(data.data.SOL.price);
+                log(`Live SOL Price updated: $${currentSolPrice.toFixed(2)}`, "scan");
+            }
         } catch (e) {
             log(`Could not fetch live SOL price. Using fallback $${currentSolPrice}`, "error");
         }
     }
 
-    // --- 1. MOBILE AUTO-DETECTION & DEEP LINKING ---
     connectWalletBtn.addEventListener('click', async () => {
         const provider = window.phantom?.solana;
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -204,7 +202,7 @@
         return { tp: 200, sl: -40 }; 
     }
 
-    // --- 2. JUPITER LIVE EXECUTION ---
+    // BUG FIX 3: Added Error Catching for CORS and Adblockers
     async function executeRealBuy(tokenAddress, name, price, liquidity) {
         log(`<i class="fa-solid fa-gears text-warning"></i> Generating Jupiter Route for ${name}...`);
 
@@ -212,18 +210,19 @@
             const solAmount = TRADE_SIZE_USD / currentSolPrice;
             const lamports = Math.floor(solAmount * 1e9); 
 
-            // Request Quote (5% slippage = 500 bps)
-            const quoteResponse = await fetch(`https://quote-api.jup.ag/v6/quote?inputMint=${SOL_MINT}&outputMint=${tokenAddress}&amount=${lamports}&slippageBps=500`);
+            const quoteResponse = await fetch(`https://quote-api.jup.ag/v6/quote?inputMint=${SOL_MINT}&outputMint=${tokenAddress}&amount=${lamports}&slippageBps=500`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
             const quoteData = await quoteResponse.json();
 
             if (quoteData.error) throw new Error(quoteData.error);
 
             log(`<i class="fa-solid fa-route text-success"></i> Route found! Requesting transaction data...`);
 
-            // Request Serialized Transaction
             const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({
                     quoteResponse: quoteData,
                     userPublicKey: walletAddress,
@@ -234,7 +233,6 @@
             const swapData = await swapResponse.json();
             if (!swapData.swapTransaction) throw new Error("Failed to generate swap transaction.");
 
-            // Decode and send to Phantom
             const swapTransactionBuf = base64ToUint8Array(swapData.swapTransaction);
             const transaction = solanaWeb3.VersionedTransaction.deserialize(swapTransactionBuf);
 
@@ -246,7 +244,6 @@
             log(`TX Submitted! Sig: ${signature.substring(0,8)}...`, "buy");
             buySound.play().catch(() => {});
 
-            // Log position
             const riskParams = calculateDynamicTargets(liquidity);
             activePositions[tokenAddress] = {
                 id: Date.now(),
@@ -266,11 +263,15 @@
             updatePortfolioUI();
 
         } catch (error) {
-            log(`Execution failed: ${error.message}`, "error");
+            // Friendly error message explaining why the fetch failed
+            if (error.message.includes("Failed to fetch")) {
+                log(`Execution failed: Network Blocked. Are you using an Adblocker or opening the file directly (CORS error)? Host on GitHub Pages.`, "error");
+            } else {
+                log(`Execution failed: ${error.message}`, "error");
+            }
         }
     }
 
-    // --- 3. ASYNC SAFE SCANNER ---
     async function scanMarket() {
         if (!walletAddress || isScanning) return;
         isScanning = true;
@@ -312,7 +313,6 @@
         } catch (error) {} finally { isScanning = false; }
     }
 
-    // --- 4. PRICE MONITOR ---
     async function monitorPrices() {
         if (isMonitoring) return; 
         const activeAddresses = tradeHistory.filter(addr => activePositions[addr].status === 'Holding');
@@ -356,16 +356,12 @@
         } catch (error) {} finally { isMonitoring = false; }
     }
 
-    // --- 5. ALERTS ---
     function triggerSell(address, reason) {
-        // NOTE: In a fully autonomous system, this would trigger executeRealSell() via Jupiter.
-        // For frontend safety, we trigger an alert so you can sell via Jupiter UI manually.
         activePositions[address].status = `Sold (${reason})`;
         sellSound.play().catch(() => {}); 
         log(`${activePositions[address].name} closed: ${reason} for $${activePositions[address].currentValue.toFixed(2)}`, "sell");
     }
 
-    // --- 6. RENDERER ---
     function updatePortfolioUI() {
         if (tradeHistory.length === 0) return;
 
@@ -405,7 +401,6 @@
         portfolioBody.innerHTML = htmlRender;
     }
 
-    // --- CONTROLS ---
     startBtn.addEventListener('click', async () => {
         if (!walletAddress) {
             alert("Please connect your Phantom Wallet first.");
@@ -418,7 +413,7 @@
         
         log("<i class='fa-solid fa-play text-success'></i> Live Engine Started.");
         
-        await fetchLiveSolPrice(); // Get accurate SOL price before trading
+        await fetchLiveSolPrice(); 
         
         scanMarket();
         scanInterval = setInterval(scanMarket, 18000); 

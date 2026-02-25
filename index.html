@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Auto-Sniper | Final Edition</title>
+    
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script src="https://bundle.run/bs58@5.0.0"></script>
+    <script src="https://bundle.run/buffer@6.0.3"></script>
+
+    <style>
+        :root {
+            --sol-green: #14F195;
+            --bg-dark: #09090b;
+            --panel-bg: #18181b;
+            --panel-border: #27272a;
+            --text-main: #f4f4f5;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+        body { background-color: var(--bg-dark); color: var(--text-main); display: flex; justify-content: center; padding: 15px; min-height: 100vh; }
+
+        .container { background-color: var(--panel-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--panel-border); width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+
+        h1 { color: var(--sol-green); font-size: 22px; text-align: center; font-weight: 800;}
+        .warning { color: var(--danger); font-size: 12px; text-align: center; font-weight: bold; background: rgba(239,68,68,0.1); padding: 8px; border-radius: 4px; border: 1px solid var(--danger); text-transform: uppercase; }
+
+        .pk-box { background: #000; padding: 15px; border-radius: 8px; border: 1px solid var(--panel-border); }
+        .pk-box label { color: var(--sol-green); font-size: 13px; font-weight: bold; display: block; margin-bottom: 8px; }
+        .pk-input { width: 100%; padding: 12px; background: #111; border: 1px solid #333; color: var(--sol-green); border-radius: 6px; font-family: monospace; font-size: 14px; }
+        .pk-input:focus { outline: none; border-color: var(--sol-green); }
+        
+        .filters { display: flex; justify-content: space-between; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 8px; flex-wrap: wrap; gap: 10px; font-size: 14px; border: 1px solid var(--panel-border); }
+        .filters div { flex: 1; text-align: center; min-width: 90px; }
+        input[type="number"] { background: transparent; border: none; border-bottom: 1px solid var(--sol-green); color: var(--sol-green); width: 50px; text-align: center; font-weight: bold; outline: none; font-size: 16px;}
+
+        button { width: 100%; padding: 16px; border-radius: 8px; border: none; font-weight: 900; font-size: 16px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: transform 0.1s; }
+        button:active { transform: scale(0.98); }
+        .btn-start { background-color: var(--sol-green); color: #000; }
+        .btn-stop { background-color: var(--danger); color: #fff; display: none; }
+
+        .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--panel-border); border-radius: 8px; }
+        table { width: 100%; min-width: 500px; border-collapse: collapse; text-align: left; font-size: 13px; background: rgba(0,0,0,0.3); }
+        th, td { padding: 14px 12px; border-bottom: 1px solid var(--panel-border); }
+        th { background: rgba(20,241,149,0.1); color: var(--sol-green); font-weight: 700; }
+        
+        .log-box { background: #000; padding: 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-family: monospace; height: 250px; overflow-y: auto; font-size: 12px; line-height: 1.6; color: #aaa; }
+        .log-buy { color: var(--success); font-weight: bold; }
+        .log-sell { color: var(--danger); font-weight: bold; }
+        .log-tx { color: #3b82f6; }
+        .log-error { color: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>⚡ 100% AUTO-SNIPER V6</h1>
+    <div class="warning">Warning: Uses Raw Private Key. Burner Wallets Only.</div>
+
+    <div class="pk-box" id="pkContainer">
+        <label>Paste Burner Wallet Private Key:</label>
+        <input type="password" id="pkInput" class="pk-input" placeholder="e.g. 5xY... or [12, 34...]">
+    </div>
+
+    <div class="filters">
+        <div><strong>Buy Size:</strong> $<input type="number" id="usdAmount" value="2"></div>
+        <div><strong>TP:</strong> <input type="number" id="tpInput" value="30">%</div>
+        <div><strong>SL:</strong> <input type="number" id="slInput" value="-15">%</div>
+    </div>
+
+    <audio id="buySound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+    <audio id="sellSound" src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" preload="auto"></audio>
+
+    <button class="btn-start" id="startBtn">🚀 Start Auto-Pilot</button>
+    <button class="btn-stop" id="stopBtn">🛑 Stop Engine</button>
+
+    <div class="table-wrapper">
+        <table id="portfolioTable">
+            <thead>
+                <tr>
+                    <th>Token</th>
+                    <th>Entry ($)</th>
+                    <th>Current ($)</th>
+                    <th>PnL</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="portfolioBody">
+                <tr><td colspan="5" style="text-align:center; color: #666;">No active trades</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="log-box" id="logBox">> System initializing...<br></div>
+</div>
+
+<script>
+    // CRITICAL: Force Buffer for Mobile Browsers
+    window.onload = function() {
+        if (typeof buffer !== 'undefined') {
+            window.Buffer = buffer.Buffer;
+            log("✅ System dependencies loaded.", "log-tx");
+        } else {
+            log("❌ Critical Error: Browser blocked required Web3 libraries.", "log-error");
+        }
+    };
+
+    const SOL_MINT = "So11111111111111111111111111111111111111112"; 
+    // Using mainnet-beta, but highly recommend Helius/QuickNode RPC for real sniping
+    const connection = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com", "confirmed");
+    
+    let payerKeypair = null; 
+    let activePositions = {}; 
+    let knownTokens = new Set();
+    let scanInterval, priceInterval;
+    
+    const ui = {
+        start: document.getElementById('startBtn'),
+        stop: document.getElementById('stopBtn'),
+        pk: document.getElementById('pkInput'),
+        pkContainer: document.getElementById('pkContainer'),
+        logs: document.getElementById('logBox'),
+        table: document.getElementById('portfolioBody'),
+        buySound: document.getElementById('buySound'),
+        sellSound: document.getElementById('sellSound')
+    };
+
+    let logHistory = [];
+    function log(msg, styleClass = '') {
+        const time = new Date().toLocaleTimeString([], { hour12: false });
+        const logEntry = `<span style="color:#555">[${time}]</span> <span class="${styleClass}">${msg}</span><br>`;
+        logHistory.push(logEntry);
+        if(logHistory.length > 60) logHistory.shift();
+        ui.logs.innerHTML = logHistory.join('');
+        ui.logs.scrollTop = ui.logs.scrollHeight;
+    }
+
+    // --- 1. SMART PRIVATE KEY DECODER ---
+    function initWallet() {
+        let pkVal = ui.pk.value.trim();
+        if (!pkVal) {
+            log("Please paste your Private Key first.", "log-error");
+            return false;
+        }
+
+        try {
+            let secretKey;
+            // Handle Phantom's array export format
+            if (pkVal.startsWith('[')) {
+                secretKey = Uint8Array.from(JSON.parse(pkVal));
+            } else {
+                // Handle Base58 string format (strip spaces just in case)
+                pkVal = pkVal.replace(/\s/g, ''); 
+                secretKey = bs58.decode(pkVal);
+            }
+
+            payerKeypair = solanaWeb3.Keypair.fromSecretKey(secretKey);
+            
+            ui.pkContainer.innerHTML = `<div style="color:#10b981; font-weight:bold; text-align:center; padding: 10px;">✅ Wallet Linked Successfully:<br>${payerKeypair.publicKey.toString()}</div>`;
+            return true;
+        } catch (e) {
+            log("Invalid Private Key format. Ensure you copied it correctly from Phantom.", "log-error");
+            return false;
+        }
+    }
+
+    // --- 2. JUPITER AUTO-SWAP ENGINE ---
+    async function executeSwap(inputMint, outputMint, amountStr, isSell = false) {
+        try {
+            const quoteRes = await fetch(`https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountStr}&slippageBps=500`); 
+            const quoteData = await quoteRes.json();
+            if (quoteData.error) throw new Error(quoteData.error);
+
+            const swapRes = await fetch('https://quote-api.jup.ag/v6/swap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    quoteResponse: quoteData,
+                    userPublicKey: payerKeypair.publicKey.toString(),
+                    wrapAndUnwrapSol: true,
+                    prioritizationFeeLamports: 150000 // Priority fee to ensure execution
+                })
+            });
+            const swapData = await swapRes.json();
+            if (swapData.error) throw new Error(swapData.error);
+
+            const txBuf = Buffer.from(swapData.swapTransaction, 'base64');
+            const tx = solanaWeb3.VersionedTransaction.deserialize(txBuf);
+            
+            // AUTOMATIC SIGNATURE - ZERO CLICKS
+            tx.sign([payerKeypair]); 
+            
+            const rawTx = tx.serialize();
+            const txid = await connection.sendRawTransaction(rawTx, { skipPreflight: true, maxRetries: 2 });
+            
+            log(`TX Broadcasted! solscan.io/tx/${txid.slice(0, 8)}...`, 'log-tx');
+            return true;
+        } catch (err) {
+            log(`Swap Failed: ${err.message}`, 'log-error');
+            return false;
+        }
+    }
+
+    // --- 3. AUTO SCANNER & BUY ---
+    async function scanMarket() {
+        try {
+            const res = await fetch('https://api.geckoterminal.com/api/v2/networks/solana/new_pools');
+            if (!res.ok) return; // Silent fail on rate limit to prevent log spam
+            
+            const data = await res.json();
+            const pool = data?.data?.[0]?.attributes;
+            const tokenAddress = data?.data?.[0]?.relationships?.base_token?.data?.id.replace('solana_', '');
+            
+            if (!pool || !tokenAddress || knownTokens.has(tokenAddress)) return;
+            knownTokens.add(tokenAddress);
+
+            const price = parseFloat(pool.base_token_price_usd);
+            const liq = parseFloat(pool.reserve_in_usd);
+            const name = pool.name.split(' / ')[0].substring(0, 8);
+
+            // Filters: $5k liquidity minimum
+            if (liq >= 5000 && price > 0) {
+                log(`Target Locked: ${name}. Calculating Swap...`, 'log-tx');
+                
+                try {
+                    const solRes = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
+                    const solData = await solRes.json();
+                    const solPrice = parseFloat(solData.data[SOL_MINT].price);
+                    
+                    const targetUsd = parseFloat(document.getElementById('usdAmount').value);
+                    const lamports = Math.floor((targetUsd / solPrice) * 1000000000); 
+
+                    log(`Executing Auto-Buy: $${targetUsd} of ${name}...`, 'log-tx');
+                    
+                    const success = await executeSwap(SOL_MINT, tokenAddress, lamports, false);
+                    
+                    if (success) {
+                        ui.buySound.play().catch(()=>{});
+                        activePositions[tokenAddress] = { name, entryPrice: price, currentPrice: price, status: 'Active', pnl: 0 };
+                        log(`✅ BOUGHT ${name} at $${price.toFixed(6)}`, 'log-buy');
+                        renderTable();
+                    }
+                } catch (priceErr) {
+                    log(`Pricing Error: ${priceErr.message}`, 'log-error');
+                }
+            }
+        } catch (e) {}
+    }
+
+    // --- 4. AUTO-SELL (TAKE PROFIT / STOP LOSS) ---
+    async function checkPrices() {
+        const activeAddrs = Object.keys(activePositions).filter(k => activePositions[k].status === 'Active');
+        if (activeAddrs.length === 0) return;
+
+        try {
+            const res = await fetch(`https://api.geckoterminal.com/api/v2/simple/networks/solana/token_price/${activeAddrs.join(',')}`);
+            const data = await res.json();
+            const prices = data?.data?.attributes?.token_prices;
+            if(!prices) return;
+
+            const tp = parseFloat(document.getElementById('tpInput').value);
+            const sl = parseFloat(document.getElementById('slInput').value);
+
+            for (let addr of activeAddrs) {
+                if (prices[addr]) {
+                    const newPrice = parseFloat(prices[addr]);
+                    const entry = activePositions[addr].entryPrice;
+                    const pnl = ((newPrice - entry) / entry) * 100;
+                    
+                    activePositions[addr].currentPrice = newPrice;
+                    activePositions[addr].pnl = pnl;
+
+                    if (pnl >= tp || pnl <= sl) {
+                        log(`🚨 ${activePositions[addr].name} hit Target! Auto-Selling...`, 'log-tx');
+                        activePositions[addr].status = 'Selling...';
+                        
+                        try {
+                            // Fetch exact token balance on-chain
+                            const accounts = await connection.getParsedTokenAccountsByOwner(payerKeypair.publicKey, { mint: new solanaWeb3.PublicKey(addr) });
+                            
+                            if(accounts.value.length > 0) {
+                                const tokenAmountRaw = accounts.value[0].account.data.parsed.info.tokenAmount.amount;
+                                
+                                // Execute Sell Swap
+                                const sold = await executeSwap(addr, SOL_MINT, tokenAmountRaw, true);
+                                if (sold) {
+                                    ui.sellSound.play().catch(()=>{});
+                                    activePositions[addr].status = `Sold (${pnl.toFixed(1)}%)`;
+                                    log(`✅ SOLD ${activePositions[addr].name} successfully.`, 'log-sell');
+                                } else {
+                                    activePositions[addr].status = 'Active'; // Reset if fail
+                                }
+                            } else {
+                                activePositions[addr].status = 'No Balance';
+                            }
+                        } catch(err) {
+                            activePositions[addr].status = 'Active'; 
+                            log(`Fetch balance error: ${err.message}`, 'log-error');
+                        }
+                    }
+                }
+            }
+            renderTable();
+        } catch(e) {}
+    }
+
+    // --- 5. RENDER UI ---
+    function renderTable() {
+        let html = '';
+        for (let addr in activePositions) {
+            const pos = activePositions[addr];
+            const pColor = pos.pnl > 0 ? '#10b981' : (pos.pnl < 0 ? '#ef4444' : '#a1a1aa');
+            html += `<tr style="opacity: ${pos.status.includes('Sold') ? '0.4' : '1'}">
+                <td><strong>${pos.name}</strong><br><span style="font-size:10px; color:#666;">${addr.slice(0,6)}...</span></td>
+                <td>$${pos.entryPrice.toFixed(6)}</td>
+                <td>$${pos.currentPrice.toFixed(6)}</td>
+                <td style="color:${pColor}; font-weight:bold;">${pos.pnl > 0 ? '+':''}${pos.pnl.toFixed(2)}%</td>
+                <td>${pos.status}</td>
+            </tr>`;
+        }
+        ui.table.innerHTML = html || '<tr><td colspan="5" style="text-align:center; color:#666;">No active trades</td></tr>';
+    }
+
+    // --- CONTROLS ---
+    ui.start.addEventListener('click', () => {
+        if (!payerKeypair && !initWallet()) return; 
+
+        ui.buySound.play().catch(()=>{}); // Unlock audio context
+        ui.start.style.display = 'none';
+        ui.stop.style.display = 'block';
+        log("🟢 FULL AUTO-PILOT ENGAGED. Hands-free scanning started...", 'log-tx');
+        
+        scanMarket();
+        scanInterval = setInterval(scanMarket, 15000); 
+        priceInterval = setInterval(checkPrices, 20000); 
+    });
+
+    ui.stop.addEventListener('click', () => {
+        ui.start.style.display = 'block';
+        ui.stop.style.display = 'none';
+        clearInterval(scanInterval);
+        clearInterval(priceInterval);
+        log("🛑 Auto-Pilot Stopped.", 'log-error');
+    });
+</script>
+
+</body>
+</html>

@@ -146,7 +146,7 @@
     </div>
 
     <div class="filters">
-        <div><strong>Min Liquidity:</strong> $1,000</div>
+        <div><strong>Min Liquidity:</strong> $5,000</div>
         <div><strong>Take Profit:</strong> +30%</div>
         <div><strong>Stop Loss:</strong> -15%</div>
     </div>
@@ -209,7 +209,6 @@
         
         logHistory.push(`${prefix}${message}`);
         
-        // Prevent DOM Memory Leak / Lag
         if (logHistory.length > MAX_LOGS) {
             logHistory.shift(); 
         }
@@ -221,7 +220,6 @@
         logBox.scrollTop = logBox.scrollHeight;
     }
 
-    // --- COPY TO CLIPBOARD ---
     function copyToClipboard(text, element) {
         navigator.clipboard.writeText(text).then(() => {
             const originalText = element.innerText;
@@ -237,37 +235,48 @@
         });
     }
 
-    // --- 1. BUG-FREE SCANNER (Powered by DexScreener API) ---
+    // --- ANTI-CORS FETCH WRAPPER ---
+    async function safeFetch(url) {
+        try {
+            // Try direct route first
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+        } catch (error) {
+            // If direct route fails (Failed to fetch), reroute through proxy
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const proxyRes = await fetch(proxyUrl, { cache: 'no-store' });
+                if (!proxyRes.ok) throw new Error(`Proxy HTTP ${proxyRes.status}`);
+                return await proxyRes.json();
+            }
+            throw error; // If it's a different error, throw it normally
+        }
+    }
+
+    // --- 1. BUG-FREE SCANNER (DexScreener API) ---
     async function scanMarket() {
         log("📡 Sweeping DexScreener for new safe pairs...");
         try {
-            // Fetch newest token profiles to guarantee fresh pairs
-            const profileRes = await fetch('https://api.dexscreener.com/token-profiles/latest/v1');
-            if (!profileRes.ok) throw new Error(`HTTP ${profileRes.status}`);
+            const profiles = await safeFetch('https://api.dexscreener.com/token-profiles/latest/v1');
             
-            const profiles = await profileRes.json();
             if (!profiles || !Array.isArray(profiles)) return;
 
-            // Extract Solana tokens we haven't scanned yet
             const newSolTokens = profiles
                 .filter(t => t.chainId === 'solana' && !knownTokens.has(t.tokenAddress))
                 .map(t => t.tokenAddress);
 
             if (newSolTokens.length === 0) return;
 
-            // Fetch live trading data for these new tokens
             const addressString = newSolTokens.slice(0, 30).join(',');
-            const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addressString}`);
-            if (!pairRes.ok) throw new Error(`HTTP ${pairRes.status}`);
+            const pairData = await safeFetch(`https://api.dexscreener.com/latest/dex/tokens/${addressString}`);
             
-            const pairData = await pairRes.json();
             if (!pairData || !pairData.pairs) return;
 
             let boughtThisRound = 0;
             for (const pool of pairData.pairs) {
-                if (boughtThisRound >= 3) break; // Limit buys to 3 per sweep to prevent spam
+                if (boughtThisRound >= 3) break; 
 
-                // Defensive checks to prevent "search error" crash
                 if (pool.chainId !== 'solana' || !pool.baseToken || !pool.priceUsd) continue;
 
                 const tokenAddress = pool.baseToken.address;
@@ -279,10 +288,9 @@
                 if (isNaN(price) || isNaN(liquidity)) continue; 
 
                 if (!knownTokens.has(tokenAddress)) {
-                    knownTokens.add(tokenAddress); // Mark as known to avoid duplicates
+                    knownTokens.add(tokenAddress); 
 
-                    // Strict filters - minimum liquidity dropped to 1k for faster initial testing
-                    if (liquidity >= 1000 && price > 0) {
+                    if (liquidity >= 5000 && price > 0) {
                         executeBuy(tokenAddress, tokenName, price);
                         boughtThisRound++;
                     }
@@ -319,13 +327,10 @@
         
         try {
             const addressString = batch.join(',');
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addressString}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await safeFetch(`https://api.dexscreener.com/latest/dex/tokens/${addressString}`);
             
-            const data = await response.json();
             if (!data || !data.pairs) return;
 
-            // Extract the latest prices
             const latestPrices = {};
             for (const pair of data.pairs) {
                 if (pair.chainId === 'solana' && pair.baseToken) {
@@ -347,7 +352,6 @@
                     activePositions[address].currentPrice = newPrice;
                     activePositions[address].pnl = pnlPercent;
 
-                    // TP / SL Logic
                     if (pnlPercent >= 30) {
                         triggerSell(address, `TP +${pnlPercent.toFixed(1)}%`);
                     } else if (pnlPercent <= -15) {
@@ -367,6 +371,7 @@
         activePositions[address].status = `Sold (${reason})`;
         sellSound.play().catch(() => {}); 
         log(`${activePositions[address].name} closed: ${reason}`, "sell");
+        updatePortfolioUI();
     }
 
     // --- 5. RENDER UI ---
@@ -410,16 +415,16 @@
 
     // --- CONTROLS ---
     startBtn.addEventListener('click', () => {
-        buySound.play().catch(() => {}); // unlock audio context
+        buySound.play().catch(() => {}); 
         startBtn.style.display = 'none';
         stopBtn.style.display = 'block';
         
         log("🟢 Engine Started. Scanning market...");
         
         scanMarket();
-        // Run scanner every 18s, Price checker every 30s to avoid API Rate Limits
-        scanInterval = setInterval(scanMarket, 18000); 
-        priceMonitorInterval = setInterval(monitorPrices, 30000); 
+        // Slightly relaxed intervals to prevent aggressive rate limiting
+        scanInterval = setInterval(scanMarket, 20000); 
+        priceMonitorInterval = setInterval(monitorPrices, 25000); 
     });
 
     stopBtn.addEventListener('click', () => {
@@ -431,7 +436,6 @@
         log("🛑 Engine Stopped securely.");
     });
 
-    // Run init
     initLog();
 </script>
 
